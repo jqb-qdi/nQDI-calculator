@@ -105,14 +105,14 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("You")
     your_file = st.file_uploader("Upload YOUR file", type=["fit","csv"], key="u_file")
-    your_weight = st.number_input("Weight (lbs or kg, choose below)", min_value=30.0, max_value=300.0, format="%.1f", key="u_weight")
-    your_lthr = st.number_input("LTHR (bpm, optional if HR missing)", min_value=100, max_value=220, step=1, key="u_lthr")
+    your_weight = st.number_input("Weight (lbs or kg)", min_value=0.0, max_value=300.0, format="%.1f", key="u_weight")
+    your_lthr = st.number_input("LTHR (bpm, optional if HR missing)", min_value=0, max_value=220, step=1, key="u_lthr")
 
 with col2:
     st.subheader("Friend")
     friend_file = st.file_uploader("Upload FRIEND file", type=["fit","csv"], key="f_file")
-    friend_weight = st.number_input("Weight (lbs or kg, same unit as yours)", min_value=30.0, max_value=300.0, format="%.1f", key="f_weight")
-    friend_lthr = st.number_input("LTHR (bpm, optional if HR missing)", min_value=100, max_value=220, step=1, key="f_lthr")
+    friend_weight = st.number_input("Weight (lbs or kg, same unit as yours)", min_value=0.0, max_value=300.0, format="%.1f", key="f_weight")
+    friend_lthr = st.number_input("LTHR (bpm, optional if HR missing)", min_value=0, max_value=220, step=1, key="f_lthr")
 
 alpha = st.slider("HR weighting exponent α", 0.5, 2.5, 1.5, 0.1)
 smooth = st.slider("Smoothing seconds (EMA)", 1, 60, 30, 1)
