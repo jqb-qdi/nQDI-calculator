@@ -117,7 +117,7 @@ with col2:
 alpha = st.slider("HR weighting exponent α", 0.5, 2.5, 1.5, 0.1)
 smooth = st.slider("Smoothing seconds (EMA)", 1, 60, 30, 1)
 
-compute_btn = st.button("⚡ Unleash nQDI™ Chaos")
+compute_btn = st.button("⚡ Calculate nQDI™ (ruin a friendship)")
 
 # ---------------------------
 # Compute
