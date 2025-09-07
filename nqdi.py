@@ -1,4 +1,4 @@
-# nQDI_unhinged_v2.py
+# nQDI_v2.py
 import io
 import numpy as np
 import pandas as pd
@@ -9,37 +9,49 @@ from fitparse import FitFile
 import random
 
 # ---------------------------
-# App Config
+# CONFIG
 # ---------------------------
+titles = [
+    "nQDI™: Pedal Bankruptcy Simulator",
+    "nQDI™: Live Quadriceps Repossession Service",
+    "nQDI™: Catastrophic Ego Foreclosure",
+    "nQDI™: KOM Dreams in Ashes Edition",
+    "nQDI™: Divorce-Grade Power Analysis"
+]
 st.set_page_config(
-    page_title="nQDI™ Live: Watt-Crushing, Quad-Bankrupting, Ego-Annihilating Simulator™",
+    page_title=random.choice(titles),
     layout="wide"
 )
 
 # ---------------------------
-# Utilities
+# UTILITIES
 # ---------------------------
 def read_fit(file_like):
     fitfile = FitFile(file_like)
     rows = []
     for msg in fitfile.get_messages("record"):
-        rec = {"power": None, "hr": None}
+        rec = {"power": None, "hr": None, "speed": None}
         for d in msg:
             if d.name == "power": rec["power"] = d.value
             elif d.name == "heart_rate": rec["hr"] = d.value
+            elif d.name == "speed": rec["speed"] = d.value
         rows.append(rec)
     df = pd.DataFrame(rows).dropna(subset=["power"])
     df["power"] = pd.to_numeric(df["power"], errors="coerce").fillna(0)
-    df["hr"] = pd.to_numeric(df["hr"], errors="coerce").fillna(method="ffill").fillna(0)
+    df["hr"] = pd.to_numeric(df["hr"], errors="coerce").fillna(0)
+    df["speed"] = pd.to_numeric(df["speed"], errors="coerce").fillna(0)
     df["time"] = pd.to_timedelta(np.arange(len(df)), unit="s")
-    return df[["time","power","hr"]]
+    return df[["time", "power", "hr", "speed"]]
 
 def read_csv(file_like):
     df = pd.read_csv(file_like)
+    if "speed" not in df.columns:
+        df["speed"] = 0
     df["power"] = pd.to_numeric(df["power"], errors="coerce").fillna(0)
-    df["hr"] = pd.to_numeric(df["hr"], errors="coerce").fillna(method="ffill").fillna(0)
+    df["hr"] = pd.to_numeric(df["hr"], errors="coerce").fillna(0)
+    df["speed"] = pd.to_numeric(df["speed"], errors="coerce").fillna(0)
     df["time"] = pd.to_timedelta(np.arange(len(df)), unit="s")
-    return df[["time","power","hr"]]
+    return df[["time", "power", "hr", "speed"]]
 
 def load_file(upload):
     name = upload.name.lower()
@@ -47,133 +59,152 @@ def load_file(upload):
     elif name.endswith(".csv"): return read_csv(upload)
     else: raise ValueError("Unsupported file. Upload .fit or .csv")
 
-def ema(series, span=30):
-    return pd.Series(series).ewm(span=span, adjust=False).mean().to_numpy()
+def rolling_np(power, window=30):
+    """ True Normalized Power calculation """
+    p4 = pd.Series(power).rolling(window=window, min_periods=1).mean() ** 4
+    return (np.mean(p4) ** 0.25)
 
-def effective_watts(power, hr, lthr, alpha=1.5):
-    power = np.array(power)
-    hr = np.array(hr)
-    if lthr <= 0 or np.all(hr==0):
-        # fallback: use power only if HR missing
+def effective_power(power, hr, lthr, alpha=1.5):
+    """ HR efficiency scaling: only if HR + LTHR are valid """
+    if hr.max() <= 0 or lthr <= 0:
         return power
-    hr_safe = np.where(hr==0, np.nan, hr)
-    hr_ratio = lthr / hr_safe
+    hr_ratio = np.divide(lthr, np.maximum(hr, 1e-3))  # lower HR = better
     hr_ratio = np.clip(hr_ratio, 0.3, 3.0)
-    eff = power * (np.nan_to_num(hr_ratio, nan=1.0) ** alpha)
-    return eff
+    return power * (hr_ratio ** alpha)
 
 def align_to_same_length(a_df, b_df):
-    merged = pd.merge(a_df, b_df, left_index=True, right_index=True, suffixes=("_you","_friend"))
-    return merged
+    min_len = min(len(a_df), len(b_df))
+    return a_df.iloc[:min_len].reset_index(drop=True), b_df.iloc[:min_len].reset_index(drop=True)
+
+def best_efforts(power, durations=[60, 300, 1200]):
+    results = {}
+    arr = np.array(power)
+    for d in durations:
+        if len(arr) >= d:
+            rolling = pd.Series(arr).rolling(window=d).mean()
+            results[f"{d//60}min"] = rolling.max()
+        else:
+            results[f"{d//60}min"] = np.nan
+    return results
 
 def roast_text(nqdi_kg):
-    lines = []
-    # escalating unhinged roasts
+    # Escalating tiers
     if nqdi_kg < 0.85:
-        lines.append("🚀 Absolute overlord: your friend's quads just filed restraining orders against your ego.")
+        tier = [
+            "🚀 Overlord status achieved. Your friend’s quads are crying for mercy.",
+            "🦵💨 You basically made them your domestique for life."
+        ]
     elif nqdi_kg < 1.0:
-        lines.append("⚡ Slightly tolerable: your HR is gasping, but your ego barely survives.")
-    elif nqdi_kg < 1.15:
-        lines.append("💥 Meh domination: watts tremble, quads weep silently.")
-    elif nqdi_kg < 1.35:
-        lines.append("🔥 Leaky tire apocalypse: pedal strokes betray human decency.")
-    elif nqdi_kg < 1.8:
-        lines.append("💀 Domestique purgatory: you haul bottles while they harvest KOMs.")
+        tier = [
+            "⚡ Barely tolerable: your friend’s watts still fear you.",
+            "🥵 HR panic but hey, you’re not useless yet."
+        ]
+    elif nqdi_kg < 1.2:
+        tier = [
+            "💥 You’re trembling, their watts are flexing. Mediocrity unlocked.",
+            "🤡 KOM attempts cancelled: friend casually spins past you."
+        ]
+    elif nqdi_kg < 1.5:
+        tier = [
+            "🔥 Welcome to the pain cave: population = your self-esteem.",
+            "📉 Your FTP graph looks like a crypto crash chart."
+        ]
     else:
-        lines.append("💣 Catastrophic quad bankruptcy: retire, take up knitting, cry into ✨håndmådë cøttøn tūbùlårs✨ at 11psi.")
-
-    micro_roasts = [
-        "That sprint at t=42s? spaghetti limbs exploded.",
-        "HR curve like a horror movie, watts weeping quietly.",
-        "Peak nQDI recorded; funeral for your ego scheduled.",
-        "Strava KOM dreams evaporated; ghosts of FTP past haunt your files.",
-        "Every pedal stroke whispers: 'why even try?'",
-        "Your QDI screams louder than your legs ever could.",
-        "Quads evicted from the ego apartment; rent overdue in watts."
-    ]
-    lines.append(random.choice(micro_roasts))
-    return "\n".join(lines)
+        tier = [
+            "💣 QUAD BANKRUPTCY. Retire now. Cry into your ✨handmade cotton tubulars✨.",
+            "⚰️ Strava flagged your ride as ‘missing confidence.’"
+        ]
+    return random.choice(tier)
 
 # ---------------------------
 # UI
 # ---------------------------
-st.markdown("# 🩸 nQDI™ Live: Watt-Crushing, Quad-Bankrupting, Ego-Annihilating Simulator™")
-st.markdown("**Disclaimer:** This tool will obliterate your ego, calculate every shred of wattage like a merciless robot, and roast your legs with escalating cruelty. Proceed if you enjoy exquisite suffering.")
+st.title("🩸 nQDI™: Catastrophic Quad Bankruptcy Deluxe Edition™")
+st.markdown("This tool will roast you harder than a Cat 5 rider’s knees on a 20% climb. Upload your file, upload your friend’s file, and prepare for **ego destruction.**")
 
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("You")
     your_file = st.file_uploader("Upload YOUR file", type=["fit","csv"], key="u_file")
-    your_weight = st.number_input("Weight (lbs or kg)", min_value=0.0, max_value=300.0, format="%.1f", key="u_weight")
-    your_lthr = st.number_input("LTHR (bpm, optional if HR missing)", min_value=0, max_value=220, step=1, key="u_lthr")
+    your_weight = st.number_input("Weight (kg)", min_value=30.0, max_value=300.0, format="%.1f", key="u_weight")
+    your_lthr = st.number_input("LTHR (bpm, optional)", min_value=0, max_value=250, step=1, key="u_lthr")
 
 with col2:
     st.subheader("Friend")
     friend_file = st.file_uploader("Upload FRIEND file", type=["fit","csv"], key="f_file")
-    friend_weight = st.number_input("Weight (lbs or kg, same unit as yours)", min_value=0.0, max_value=300.0, format="%.1f", key="f_weight")
-    friend_lthr = st.number_input("LTHR (bpm, optional if HR missing)", min_value=0, max_value=220, step=1, key="f_lthr")
+    friend_weight = st.number_input("Weight (kg)", min_value=30.0, max_value=300.0, format="%.1f", key="f_weight")
+    friend_lthr = st.number_input("LTHR (bpm, optional)", min_value=0, max_value=250, step=1, key="f_lthr")
 
 alpha = st.slider("HR weighting exponent α", 0.5, 2.5, 1.5, 0.1)
-smooth = st.slider("Smoothing seconds (EMA)", 1, 60, 30, 1)
 
-compute_btn = st.button("⚡ Calculate nQDI™ (ruin a friendship)")
+compute_btn = st.button("⚡ Unleash nQDI™ Chaos")
 
 # ---------------------------
-# Compute
+# COMPUTE
 # ---------------------------
 if compute_btn:
     if not your_file or not friend_file:
-        st.error("Upload both files! We can't feed the nQDI™ apocalypse with missing data.")
+        st.error("Upload both files, watt goblin. Missing data = missing roast.")
         st.stop()
 
     try:
         df_you = load_file(your_file)
         df_friend = load_file(friend_file)
     except Exception as e:
-        st.error(f"File read error: {e}")
+        st.error(f"File error: {e}")
         st.stop()
 
-    # Check for missing HR
-    if df_you['hr'].max() == 0 or df_friend['hr'].max() == 0:
-        st.warning("⚠️ HR missing for one or both riders — nQDI™ will be computed purely from power where HR is absent. Accuracy reduced!")
+    # Remove stopped time (speed == 0)
+    df_you = df_you[df_you["speed"] > 0].reset_index(drop=True)
+    df_friend = df_friend[df_friend["speed"] > 0].reset_index(drop=True)
 
-    merged = align_to_same_length(df_you, df_friend)
+    # Align
+    df_you, df_friend = align_to_same_length(df_you, df_friend)
 
-    y_eff = effective_watts(merged['power_you'], merged['hr_you'], your_lthr, alpha)
-    f_eff = effective_watts(merged['power_friend'], merged['hr_friend'], friend_lthr, alpha)
+    # Effective power
+    y_eff = effective_power(df_you["power"].to_numpy(), df_you["hr"].to_numpy(), your_lthr, alpha)
+    f_eff = effective_power(df_friend["power"].to_numpy(), df_friend["hr"].to_numpy(), friend_lthr, alpha)
 
-    y_eff_s = ema(y_eff, span=smooth)
-    f_eff_s = ema(f_eff, span=smooth)
+    # Normalized Power
+    you_np = rolling_np(y_eff)
+    friend_np = rolling_np(f_eff)
 
-    nqdi_raw = f_eff_s / np.maximum(y_eff_s, 1e-6)
-    nqdi_kg = (f_eff_s/friend_weight) / np.maximum(y_eff_s/your_weight,1e-6)
-    nqdi_raw = np.clip(nqdi_raw, 0, 10)
-    nqdi_kg = np.clip(nqdi_kg, 0, 10)
+    nqdi_raw = friend_np / max(you_np, 1e-6)
+    nqdi_kg = (friend_np/friend_weight) / max(you_np/your_weight, 1e-6)
 
-    st.metric("💀 nQDI™ Raw (mean)", f"{np.mean(nqdi_raw):.3f}")
-    st.metric("⚖️ nQDI™ Weight-adjusted (mean)", f"{np.mean(nqdi_kg):.3f}")
+    st.metric("💀 nQDI™ Raw", f"{nqdi_raw:.3f}")
+    st.metric("⚖️ nQDI™ W/kg", f"{nqdi_kg:.3f}")
 
-    st.markdown("### 🔥 Brutal Roasts")
-    st.info(roast_text(np.mean(nqdi_kg)))
+    # Roasts
+    st.markdown("### 🔥 Brutal Roast")
+    st.info(roast_text(nqdi_kg))
 
-    t = merged.index.to_numpy()
-    fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08,
-        subplot_titles=("Power & HR — witness your misery", "nQDI™ Live — humiliation in motion")
-    )
+    # Best Efforts
+    st.markdown("### 📊 Best Efforts")
+    efforts_you = best_efforts(y_eff)
+    efforts_friend = best_efforts(f_eff)
+    eff_table = pd.DataFrame({
+        "You": efforts_you,
+        "Friend": efforts_friend
+    }).T
+    st.table(eff_table)
 
-    fig.add_trace(go.Scatter(x=t, y=merged['power_you'], name="You Power (watts of sorrow)", mode='lines'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=t, y=merged['power_friend'], name="Friend Power (demonic efficiency)", mode='lines'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=t, y=merged['hr_you'], name="You HR (panic bpm)", mode='lines', line=dict(dash='dot')), row=1, col=1)
-    fig.add_trace(go.Scatter(x=t, y=merged['hr_friend'], name="Friend HR (calm as hell bpm)", mode='lines', line=dict(dash='dot')), row=1, col=1)
-    fig.add_trace(go.Scatter(x=t, y=nqdi_raw, name="nQDI Raw (chaos)", mode='lines'), row=2, col=1)
-    fig.add_trace(go.Scatter(x=t, y=nqdi_kg, name="nQDI W/kg (brutality adjusted)", mode='lines'), row=2, col=1)
-    fig.add_hline(y=1.0, line_dash="dash", annotation_text="Break-even: mortal humiliation threshold", row=2, col=1)
+    # Plot
+    t = np.arange(len(y_eff))
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08,
+                        subplot_titles=("Power + HR", "nQDI™ Over Time"))
+    fig.add_trace(go.Scatter(x=t, y=df_you["power"], name="You Power"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=t, y=df_friend["power"], name="Friend Power"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=t, y=df_you["hr"], name="You HR", line=dict(dash="dot")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=t, y=df_friend["hr"], name="Friend HR", line=dict(dash="dot")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=t, y=(f_eff/y_eff), name="nQDI Raw"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=t, y=(f_eff/friend_weight)/(y_eff/your_weight), name="nQDI W/kg"), row=2, col=1)
+    fig.add_hline(y=1.0, line_dash="dash", annotation_text="Break-even humiliation line", row=2, col=1)
 
-    fig.update_yaxes(title_text="Power / HR", row=1, col=1)
+    fig.update_yaxes(title_text="Watts / HR", row=1, col=1)
     fig.update_yaxes(title_text="nQDI", row=2, col=1)
-    fig.update_xaxes(title_text="Seconds")
-    fig.update_layout(height=700, hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0))
+    fig.update_xaxes(title_text="Time (s)")
+    fig.update_layout(height=700, hovermode="x unified")
 
     st.plotly_chart(fig, use_container_width=True)
